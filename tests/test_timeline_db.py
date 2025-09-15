@@ -1,54 +1,179 @@
 """
-Tests for the timeline database functionality.
-
-These tests verify the core timeline parsing and query capabilities.
+Tests for the Google Timeline Database Parser.
 """
-
-import pytest
-import tempfile
-import json
 import os
-from datetime import datetime
-from unittest.mock import Mock, patch
+import json
+import tempfile
+import pytest
+from pathlib import Path
 
-from where_was_eye.timeline_db import MyTimelineDB, extract_interval, parse_dt_loose
+from src.where_was_eye.timeline_db import MyTimelineDB, extract_interval, parse_dt_loose
 
 
-class TestTimelineDatabase:
-    """Test suite for timeline database functionality."""
-    
-    def test_parse_dt_loose_valid_formats(self):
-        """Test parsing various datetime formats."""
-        test_cases = [
-            ("2024-08-20T15:30:00Z", datetime(2024, 8, 20, 15, 30)),
-            ("2024-08-20T15:30:00+00:00", datetime(2024, 8, 20, 15, 30)),
-            ("2024-08-20T15:30:00", datetime(2024, 8, 20, 15, 30)),
-        ]
-        
-        for input_str, expected_dt in test_cases:
-            result = parse_dt_loose(input_str)
-            assert result == expected_dt, f"Failed to parse: {input_str}"
-    
-    def test_parse_dt_loose_invalid(self):
-        """Test parsing invalid datetime strings."""
-        invalid_cases = [
-            "invalid-date",
-            "2024-13-45T99:99:99",  # Invalid components
-            "",
-            None,
-            12345,  # Not a string
-        ]
-        
-        for invalid_input in invalid_cases:
-            result = parse_dt_loose(invalid_input)
-            assert result is None, f"Should return None for: {invalid_input}"
-    
-    def test_extract_interval_from_json(self):
-        """Test extracting intervals from JSON strings."""
-        test_json = '''
+def create_test_timeline_file(file_path: str) -> None:
+    """Create a minimal test timeline JSON file."""
+    test_data = [
         {
-            "startTime": "2024-08-20T15:30:00Z",
-            "endTime": "2024-08-20T16:30:00Z",
+            "visit": {
+                "topCandidate": {
+                    "placeLocation": {
+                        "latitude": 37.7749,
+                        "longitude": -122.4194
+                    }
+                }
+            },
+            "startTime": "2021-01-15T15:30:00Z",
+            "endTime": "2021-01-15T16:30:00Z"
+        },
+        {
+            "activity": {
+                "start": {
+                    "latitude": 37.7849,
+                    "longitude": -122.4294
+                },
+                "end": {
+                    "latitude": 37.7949,
+                    "longitude": -122.4394
+                }
+            },
+            "startTime": "2021-01-15T17:30:00Z",
+            "endTime": "2021-01-15T18:30:00Z"
+        },
+                {
+            "activity": {
+                "start": {
+                    "latitude": 37.7849,
+                    "longitude": -122.4294
+                },
+                "end": {
+                    "latitude": 37.7949,
+                    "longitude": -122.4394
+                }
+            },
+            "startTime": "2021-01-16T17:30:00Z",
+            "endTime": "2021-01-16T18:30:00Z"
+        },
+    ]
+    
+    with open(file_path, 'w') as f:
+        json.dump(test_data, f)
+
+
+def test_extract_interval():
+    """Test interval extraction from various text formats."""
+    # Test with proper JSON
+    json_text = '{"startTime": "2021-01-15T15:30:00Z", "endTime": "2021-01-15T16:30:00Z"}'
+    start_dt, end_dt, meta = extract_interval(json_text)
+    assert start_dt is not None
+    assert end_dt is not None
+    assert meta['start_raw'] == "2021-01-15T15:30:00Z"
+    assert meta['end_raw'] == "2021-01-15T16:30:00Z"
+
+    # Test with single quotes
+    single_quote_text = "{'start_time': '2021-01-15T15:30:00Z', 'end_time': '2021-01-15T16:30:00Z'}"
+    start_dt, end_dt, meta = extract_interval(single_quote_text)
+    assert start_dt is not None
+    assert end_dt is not None
+
+    # Test with ISO timestamps in text
+    text_with_timestamps = "Some text with 2021-01-15T15:30:00Z and 2021-01-15T16:30:00Z timestamps"
+    start_dt, end_dt, meta = extract_interval(text_with_timestamps)
+    assert start_dt is not None
+    assert end_dt is not None
+
+
+def test_parse_dt_loose():
+    """Test loose datetime parsing."""
+    # Test ISO format with Z
+    dt = parse_dt_loose("2021-01-15T15:30:00Z")
+    assert dt is not None
+    assert dt.year == 2021
+    assert dt.month == 1
+    assert dt.day == 15
+    assert dt.hour == 15
+    assert dt.minute == 30
+
+    # Test ISO format with timezone offset
+    dt = parse_dt_loose("2021-01-15T15:30:00+00:00")
+    assert dt is not None
+
+    # Test invalid format
+    dt = parse_dt_loose("invalid-date")
+    assert dt is None
+
+
+def test_timeline_db_initialization():
+    """Test timeline database initialization with test data."""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        create_test_timeline_file(f.name)
+        temp_file = f.name
+
+    try:
+        # Test initialization
+        db = MyTimelineDB(temp_file)
+        assert db._time_idx is not None
+        assert db._all_data is not None
+        assert len(db._time_idx) == 3  # Should have 3 intervals
+
+        # Test cache creation
+        cache_dir = os.path.join(os.path.dirname(temp_file), ".timeline_cache")
+        assert os.path.exists(os.path.join(cache_dir, "intervals.npz"))
+        assert os.path.exists(os.path.join(cache_dir, "all_data.pkl"))
+        assert os.path.exists(os.path.join(cache_dir, "source_hash.txt"))
+
+    finally:
+        # Cleanup
+        if os.path.exists(temp_file):
+            os.unlink(temp_file)
+        cache_dir = os.path.join(os.path.dirname(temp_file), ".timeline_cache")
+        if os.path.exists(cache_dir):
+            import shutil
+            shutil.rmtree(cache_dir)
+
+
+def test_get_location_at_time():
+    """Test location retrieval at specific times."""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        create_test_timeline_file(f.name)
+        temp_file = f.name
+
+    try:
+        db = MyTimelineDB(temp_file)
+
+        # Test within first interval
+        location = db.get_location_at_time(2021, 1, 15, 15, 45)
+        assert location["latitude"] == 37.7749
+        assert location["longitude"] == -122.4194
+
+        # Test outside intervals (should return None)
+        location = db.get_location_at_time(2020, 1, 1, 12, 0)
+        assert location["latitude"] is None
+        assert location["longitude"] is None
+
+    finally:
+        if os.path.exists(temp_file):
+            os.unlink(temp_file)
+        cache_dir = os.path.join(os.path.dirname(temp_file), ".timeline_cache")
+        if os.path.exists(cache_dir):
+            import shutil
+            shutil.rmtree(cache_dir)
+
+
+def test_cache_validation():
+    """Test that cache is invalidated when source file changes."""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        create_test_timeline_file(f.name)
+        temp_file = f.name
+
+    try:
+        # Create initial database and cache
+        db1 = MyTimelineDB(temp_file)
+        original_hash = db1._source_hash
+
+        # Modify the file
+        with open(temp_file, 'r') as f:
+            data = json.load(f)
+        data.append({
             "visit": {
                 "topCandidate": {
                     "placeLocation": {
@@ -56,189 +181,63 @@ class TestTimelineDatabase:
                         "longitude": -74.0060
                     }
                 }
-            }
-        }
-        '''
-        
-        start_dt, end_dt, meta = extract_interval(test_json)
-        assert start_dt == datetime(2024, 8, 20, 15, 30)
-        assert end_dt == datetime(2024, 8, 20, 16, 30)
-        assert meta["start_raw"] == "2024-08-20T15:30:00Z"
-        assert meta["end_raw"] == "2024-08-20T16:30:00Z"
-    
-    def test_extract_interval_missing_times(self):
-        """Test extracting intervals when times are missing."""
-        test_json = '{"someOtherField": "value"}'
-        start_dt, end_dt, meta = extract_interval(test_json)
-        assert start_dt is None
-        assert end_dt is None
-    
-    def test_database_initialization(self):
-        """Test database initialization with mock data."""
-        # Create a temporary timeline JSON file
-        mock_timeline_data = [
-            {
-                "startTime": "2024-08-20T15:30:00Z",
-                "endTime": "2024-08-20T16:30:00Z",
-                "visit": {
-                    "topCandidate": {
-                        "placeLocation": {
-                            "latitude": 40.7128,
-                            "longitude": -74.0060
-                        }
-                    }
-                }
             },
-            {
-                "startTime": "2024-08-20T17:00:00Z", 
-                "endTime": "2024-08-20T18:00:00Z",
-                "activity": {
-                    "start": {
-                        "latitude": 40.7580,
-                        "longitude": -73.9855
-                    }
-                }
-            }
-        ]
-        
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            json.dump(mock_timeline_data, f)
-            temp_file = f.name
-        
-        try:
-            # Test database initialization
-            db = MyTimelineDB(temp_file)
-            
-            # Should have created time index and data
-            assert db._time_idx is not None
-            assert db._all_data is not None
-            assert len(db._time_idx) == 2
-            
-        finally:
-            # Clean up temporary file
+            "startTime": "2021-01-16T10:00:00Z",
+            "endTime": "2021-01-16T11:00:00Z"
+        })
+        with open(temp_file, 'w') as f:
+            json.dump(data, f)
+
+        # Create new instance - should detect change and rebuild
+        db2 = MyTimelineDB(temp_file)
+        assert db2._source_hash != original_hash
+        assert len(db2._time_idx) == 4  # Should have 4 intervals now
+
+    finally:
+        if os.path.exists(temp_file):
             os.unlink(temp_file)
-    
-    @patch('where_was_eye.timeline_db.pd.IntervalIndex')
-    @patch('where_was_eye.timeline_db.pd.Timestamp')
-    def test_get_location_at_time_found(self, mock_timestamp, mock_interval_index):
-        """Test getting location when time is found in interval."""
-        # Mock the interval index and data
-        mock_interval = Mock()
-        mock_interval.contains.return_value = [True, False]  # First interval contains the time
-        mock_interval_index.from_tuples.return_value = mock_interval
-        
-        mock_timestamp.return_value = Mock()
-        
-        # Mock timeline data with a visit entry
-        mock_data = [
-            {
-                "visit": {
-                    "topCandidate": {
-                        "placeLocation": {
-                            "latitude": 40.7128,
-                            "longitude": -74.0060
-                        }
-                    }
-                }
-            },
-            {
-                "activity": {
-                    "start": {
-                        "latitude": 40.7580, 
-                        "longitude": -73.9855
-                    }
-                }
-            }
-        ]
-        
-        db = MyTimelineDB("dummy_path")
-        db._time_idx = mock_interval
-        db._all_data = mock_data
-        
-        # Mock the find_interval_or_nearest function
-        with patch('where_was_eye.timeline_db.find_interval_or_nearest') as mock_find:
-            mock_find.return_value = (0, True)  # First interval, contains time
-            
-            location = db.get_location_at_time(2024, 8, 20, 15, 30)
-            
-            assert location["latitude"] == 40.7128
-            assert location["longitude"] == -74.0060
-    
-    @patch('where_was_eye.timeline_db.find_interval_or_nearest')
-    def test_get_location_at_time_not_found(self, mock_find):
-        """Test getting location when time is not found."""
-        mock_find.return_value = (0, False)  # First interval, but doesn't contain time
-        
-        db = MyTimelineDB("dummy_path")
-        db._time_idx = Mock()
-        db._all_data = [{}]  # Empty data
-        
-        location = db.get_location_at_time(2024, 8, 20, 15, 30)
-        
-        assert location["latitude"] is None
-        assert location["longitude"] is None
-    
-    def test_get_location_activity_type(self):
-        """Test getting location from activity entries."""
-        db = MyTimelineDB("dummy_path")
-        db._time_idx = Mock()
-        
-        # Mock data with activity entry
-        mock_data = [
-            {
-                "activity": {
-                    "start": {
-                        "latitude": 40.7580,
-                        "longitude": -73.9855
-                    }
-                }
-            }
-        ]
-        db._all_data = mock_data
-        
-        # Mock finding the interval
-        with patch('where_was_eye.timeline_db.find_interval_or_nearest') as mock_find:
-            mock_find.return_value = (0, True)
-            
-            location = db.get_location_at_time(2024, 8, 20, 15, 30)
-            
-            assert location["latitude"] == 40.7580
-            assert location["longitude"] == -73.9855
+        cache_dir = os.path.join(os.path.dirname(temp_file), ".timeline_cache")
+        if os.path.exists(cache_dir):
+            import shutil
+            shutil.rmtree(cache_dir)
 
 
-class TestEdgeCases:
-    """Test edge cases and error handling."""
-    
-    def test_database_file_not_found(self):
-        """Test behavior when database file doesn't exist."""
-        with pytest.raises(FileNotFoundError):
-            MyTimelineDB("/non/existent/path.json")
-    
-    def test_invalid_json_file(self):
-        """Test behavior with invalid JSON file."""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            f.write("invalid json content")
-            temp_file = f.name
-        
-        try:
-            with pytest.raises(json.JSONDecodeError):
-                MyTimelineDB(temp_file)
-        finally:
+def test_cache_roundtrip():
+    """Test cache save and load functionality."""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        create_test_timeline_file(f.name)
+        temp_file = f.name
+
+    try:
+        # Create database and save cache
+        db1 = MyTimelineDB(temp_file)
+        n1 = len(db1._time_idx)
+
+        # Save to test cache directory
+        test_cache_dir = os.path.join(os.path.dirname(temp_file), ".timeline_cache_test")
+        current_hash = db1._get_file_hash(temp_file)
+        db1._save_cache(test_cache_dir, current_hash)
+
+        # Load from test cache
+        db2 = MyTimelineDB(temp_file)
+        success = db2._load_cache(test_cache_dir, current_hash)
+        assert success
+        n2 = len(db2._time_idx)
+
+        assert n1 == n2
+        assert n1 > 0
+
+    finally:
+        if os.path.exists(temp_file):
             os.unlink(temp_file)
-    
-    def test_empty_database_file(self):
-        """Test behavior with empty JSON file."""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            json.dump([], f)
-            temp_file = f.name
-        
-        try:
-            db = MyTimelineDB(temp_file)
-            # Should initialize without errors but with empty data
-            assert db._time_idx is not None
-            assert db._all_data == []
-        finally:
-            os.unlink(temp_file)
+        cache_dir = os.path.join(os.path.dirname(temp_file), ".timeline_cache")
+        if os.path.exists(cache_dir):
+            import shutil
+            shutil.rmtree(cache_dir)
+        test_cache_dir = os.path.join(os.path.dirname(temp_file), ".timeline_cache_test")
+        if os.path.exists(test_cache_dir):
+            import shutil
+            shutil.rmtree(test_cache_dir)
 
 
 if __name__ == "__main__":

@@ -193,12 +193,33 @@ class MyTimelineDB:
         self.db_path = db_path
         self._time_idx = None
         self._all_data = None
+        self._source_hash = None
         self._initialize_db()
         
+    def _get_file_hash(self, file_path: str) -> str:
+        """Calculate SHA256 hash of a file for change detection."""
+        import hashlib
+        sha256_hash = hashlib.sha256()
+        try:
+            with open(file_path, "rb") as f:
+                # Read and update hash in chunks of 4K
+                for byte_block in iter(lambda: f.read(4096), b""):
+                    sha256_hash.update(byte_block)
+            return sha256_hash.hexdigest()
+        except Exception as e:
+            logger.warning("Failed to calculate file hash for %s: %s", file_path, e)
+            return None
+        
     def _initialize_db(self):
-        """Initialize the database, loading from cache if available."""
+        """Initialize the database, loading from cache if available and valid."""
         cache_dir = os.path.join(os.path.dirname(self.db_path), ".timeline_cache")
-        if self._load_cache(cache_dir):
+        
+        # Calculate current source file hash
+        current_hash = self._get_file_hash(self.db_path)
+        self._source_hash = current_hash
+        
+        # Try to load cache, but only if it's still valid
+        if self._load_cache(cache_dir, current_hash):
             logger.info("Loaded timeline data from cache at %s", cache_dir)
             return
 
@@ -227,15 +248,19 @@ class MyTimelineDB:
         
         # Save cache for fast reloads
         try:
-            self._save_cache(cache_dir)
+            self._save_cache(cache_dir, current_hash)
             logger.info("Saved timeline cache to %s", cache_dir)
         except Exception as e:
             logger.warning("Failed to save timeline cache: %s", e)
 
-    def _save_cache(self, cache_dir: Optional[str] = None) -> Dict[str, str]:
+    def _save_cache(self, cache_dir: Optional[str] = None, source_hash: Optional[str] = None) -> Dict[str, str]:
         """
         Persist parsed data for fast reloads.
         
+        Args:
+            cache_dir: Cache directory path
+            source_hash: SHA256 hash of the source file for validation
+            
         Returns:
             Dict with written file paths
         """
@@ -256,21 +281,45 @@ class MyTimelineDB:
         with open(all_data_path, "wb") as f:
             pickle.dump(self._all_data, f, protocol=pickle.HIGHEST_PROTOCOL)
 
+        # Store source file hash for cache validation
+        if source_hash:
+            hash_path = os.path.join(cache_dir, "source_hash.txt")
+            with open(hash_path, "w") as f:
+                f.write(source_hash)
+
         return {"intervals": intervals_path, "all_data": all_data_path}
 
-    def _load_cache(self, cache_dir: Optional[str] = None) -> bool:
+    def _load_cache(self, cache_dir: Optional[str] = None, current_hash: Optional[str] = None) -> bool:
         """
-        Load previously cached timeline data.
+        Load previously cached timeline data if still valid.
         
+        Args:
+            cache_dir: Cache directory path
+            current_hash: Current SHA256 hash of the source file for validation
+            
         Returns:
-            True if successful
+            True if successful and cache is still valid
         """
         cache_dir = cache_dir or os.path.join(os.path.dirname(self.db_path), ".timeline_cache")
         intervals_path = os.path.join(cache_dir, "intervals.npz")
         all_data_path = os.path.join(cache_dir, "all_data.pkl")
+        hash_path = os.path.join(cache_dir, "source_hash.txt")
 
+        # Check if cache files exist
         if not (os.path.exists(intervals_path) and os.path.exists(all_data_path)):
             return False
+
+        # Validate cache if current hash is provided
+        if current_hash and os.path.exists(hash_path):
+            try:
+                with open(hash_path, "r") as f:
+                    cached_hash = f.read().strip()
+                if cached_hash != current_hash:
+                    logger.info("Cache invalidated - source file has changed")
+                    return False
+            except Exception as e:
+                logger.warning("Failed to read cache validation hash: %s", e)
+                return False
 
         try:
             arrs = np.load(intervals_path)
@@ -327,5 +376,63 @@ def main():
     print(f"Location: {location}")
 
 
+def test_cache_roundtrip() -> bool:
+    """Simple sanity test for cache save/load.
+    Builds the DB (parses or loads cache), saves cache, then reloads and compares sizes.
+    Returns True on success.
+    """
+    # Use a test file path - this should be configurable or use a test fixture
+    test_data_path = os.path.join(os.path.dirname(__file__), "test_data", "sample_timeline.json")
+    
+    # Create test data directory if it doesn't exist
+    test_data_dir = os.path.dirname(test_data_path)
+    os.makedirs(test_data_dir, exist_ok=True)
+    
+    # Create a minimal test timeline file if it doesn't exist
+    if not os.path.exists(test_data_path):
+        sample_data = [
+            {
+                "visit": {
+                    "topCandidate": {
+                        "placeLocation": {
+                            "latitude": 37.7749,
+                            "longitude": -122.4194
+                        }
+                    }
+                },
+                "startTime": "2021-01-15T15:30:00Z",
+                "endTime": "2021-01-15T16:30:00Z"
+            }
+        ]
+        with open(test_data_path, 'w') as f:
+            json.dump(sample_data, f)
+    
+    db = MyTimelineDB(test_data_path)
+    n1 = len(db._time_idx) if db._time_idx is not None else -1
+    
+    # Save to a separate test cache dir
+    test_cache_dir = os.path.join(os.path.dirname(test_data_path), ".timeline_cache_test")
+    
+    # Save cache with current hash
+    current_hash = db._get_file_hash(test_data_path)
+    db._save_cache(test_cache_dir, current_hash)
+    
+    # Load from test cache with a fresh instance
+    db2 = MyTimelineDB(test_data_path)
+    # Manually load the test cache to validate _load_cache
+    db2._load_cache(test_cache_dir, current_hash)
+    n2 = len(db2._time_idx) if db2._time_idx is not None else -1
+    
+    print(f"Cache roundtrip sizes: original={n1}, loaded={n2}")
+    return n1 == n2 and n1 > 0
+
+
 if __name__ == "__main__":
-    main()
+    # Add test function to main execution
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "--test-cache":
+        success = test_cache_roundtrip()
+        print(f"Cache roundtrip test: {'PASSED' if success else 'FAILED'}")
+        sys.exit(0 if success else 1)
+    else:
+        main()

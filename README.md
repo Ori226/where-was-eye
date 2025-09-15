@@ -20,7 +20,7 @@ pip install where-was-eye
 
 ### From Source
 ```bash
-git clone https://github.com/your-username/where-was-eye.git
+git clone https://github.com/Ori226/where-was-eye.git
 cd where-was-eye
 
 # Install in development mode (required for examples to work)
@@ -261,7 +261,7 @@ This project serves as an excellent educational resource for:
 ### Setting Up Development Environment
 
 ```bash
-git clone https://github.com/your-username/where-was-eye.git
+git clone https://github.com/Ori226/where-was-eye.git
 cd where-was-eye
 python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
@@ -270,16 +270,61 @@ pip install -e ".[dev]"
 
 ### Running Tests
 
+The project includes a comprehensive test suite covering all major components:
+
 ```bash
+# Install test dependencies
+pip install pytest fastapi httpx
+
 # Run all tests
-pytest
+python -m pytest tests/ -v
 
-# Run with coverage
-pytest --cov=where_was_eye tests/
+# Run specific test files
+python -m pytest tests/test_timeline_db.py -v
+python -m pytest tests/test_agent.py -v
+python -m pytest tests/test_server.py -v
 
-# Run specific test file
-pytest tests/test_timeline_db.py
+# Run tests with coverage report
+python -m pytest tests/ --cov=src --cov-report=html
+
+# Run cache-specific tests
+python -m src.where_was_eye.timeline_db --test-cache
 ```
+
+#### Test Structure
+
+- **`tests/test_timeline_db.py`**: Tests for the Google Timeline database parser, including:
+  - Interval extraction and datetime parsing
+  - Cache functionality with hash-based validation
+  - Location querying at specific times
+  - Cache invalidation when source files change
+
+- **`tests/test_agent.py`**: Tests for AI agent functionality (OpenAI and Ollama), including:
+  - Agent factory function
+  - Mocked API responses
+  - Error handling
+  - Integration with timeline database
+
+- **`tests/test_server.py`**: Tests for the FastAPI server endpoints, including:
+  - Health check endpoint
+  - Location query endpoints
+  - Agent query endpoints
+  - CORS headers
+  - Error handling and validation
+
+#### Writing Tests
+
+When adding new features, please include corresponding tests. The test suite uses:
+- **pytest** for test framework
+- **unittest.mock** for mocking external dependencies
+- **TestClient** from FastAPI for testing HTTP endpoints
+- **tempfile** for creating isolated test data
+
+Tests should be:
+- **Isolated**: Each test should set up its own data and clean up afterwards
+- **Deterministic**: Tests should produce the same results every time
+- **Comprehensive**: Cover both success and error cases
+- **Fast**: Tests should run quickly to encourage frequent testing
 
 ### Code Style
 
@@ -322,9 +367,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 If you have any questions or need help:
 
-- Open an [issue](https://github.com/your-username/where-was-eye/issues)
+- Open an [issue](https://github.com/Ori226/where-was-eye/issues)
 - Check the [documentation](docs/)
-- Join our [Discussions](https://github.com/your-username/where-was-eye/discussions)
+- Join our [Discussions](https://github.com/Ori226/where-was-eye/discussions)
 
 ## Roadmap
 
@@ -333,7 +378,8 @@ If you have any questions or need help:
 - [ ] Visual timeline interface
 - [ ] Batch query operations
 - [ ] Advanced caching strategies
-- [ ] More AI provider integrations
+- [ ] Fine tune LLMs for better agentic collaboration
+
 
 ---
 
