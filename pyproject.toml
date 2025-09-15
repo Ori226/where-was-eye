@@ -1,0 +1,94 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "where-was-eye"
+version = "0.1.0"
+description = "A tool for querying Google Timeline location history data with AI integration"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "Your Name", email = "your.email@example.com"}
+]
+keywords = ["google-timeline", "location-history", "ai-agent", "mcp", "fastapi"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "fastapi>=0.104.0",
+    "uvicorn>=0.24.0",
+    "pydantic>=2.0.0",
+    "pandas>=1.5.0",
+    "numpy>=1.21.0",
+    "tqdm>=4.66.0",
+    "python-dateutil>=2.8.0",
+    "pytz>=2023.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+openai = ["openai>=1.0.0"]
+ollama = ["ollama>=0.1.0"]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+    "python-multipart>=0.0.6",
+]
+all = ["where-was-eye[openai]", "where-was-eye[ollama]", "where-was-eye[dev]"]
+
+[project.urls]
+Homepage = "https://github.com/your-username/where-was-eye"
+Documentation = "https://github.com/your-username/where-was-eye#readme"
+Issues = "https://github.com/your-username/where-was-eye/issues"
+Source = "https://github.com/your-username/where-was-eye"
+
+[tool.setuptools]
+packages = ["where_was_eye"]
+package-dir = {"" = "src"}
+
+[tool.setuptools.package-data]
+where_was_eye = ["py.typed"]
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.hg
+  | \.mypy_cache
+  | \.nox
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+line_length = 88
