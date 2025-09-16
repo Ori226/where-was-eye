@@ -47,6 +47,10 @@ KEYVAL_RE = re.compile(
 )
 
 
+def parse_geo_uri(geo_string):
+    coords = geo_string.split(':')[1].split(',')
+    return {"latitude": float(coords[0]), "longitude": float(coords[1])}
+
 def parse_loose_mapping(text: str) -> Optional[Dict]:
     """Parse JSON-like text with various formatting options."""
     # Try strict JSON
@@ -355,10 +359,10 @@ class MyTimelineDB:
         item = self._all_data[pos]
         
         if 'visit' in item:
-            return item['visit']['topCandidate']['placeLocation']
+            return parse_geo_uri(item['visit']['topCandidate']['placeLocation'])
         elif 'activity' in item:
             # TODO: better handling of activities by relating to start/end times
-            return item['activity']['start']
+            return parse_geo_uri(item['activity']['start'])
         
         return {"latitude": None, "longitude": None}
 

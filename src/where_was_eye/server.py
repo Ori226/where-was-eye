@@ -12,7 +12,7 @@ from typing import Optional, Dict, Any
 import os
 import logging
 
-from .timeline_db import MyTimelineDB
+from timeline_db import MyTimelineDB
 
 logger = logging.getLogger(__name__)
 
