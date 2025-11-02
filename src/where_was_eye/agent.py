@@ -10,7 +10,7 @@ import os
 from dataclasses import dataclass
 import json
 
-from .timeline_db import MyTimelineDB
+from where_was_eye.timeline_db import MyTimelineDB
 
 # Optional imports for different AI providers
 try:

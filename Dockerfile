@@ -9,12 +9,13 @@ RUN apt-get update && apt-get install -y \
 
 # Copy requirements and install Python dependencies
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir -e .
 
 # Copy source code
 COPY src/ ./src/
 COPY examples/ ./examples/
 COPY .env.example ./
+ENV PYTHONPATH=/app/src
+RUN pip install --no-cache-dir -e .
 
 # Create directory for timeline data
 RUN mkdir -p /data

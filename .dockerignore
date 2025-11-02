@@ -91,7 +91,6 @@ docker-compose.yml
 .dockerignore
 
 # Examples (we copy only what we need)
-examples/
 
 # Don't include tests in production image
 tests/
